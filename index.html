@@ -393,14 +393,32 @@
   }
   renderSwatches();
 
+  /* ---------------- Remember the selection even after tapping the toolbar ----------------
+     On phones, tapping a button outside the editable box clears the live text selection
+     before a click handler can read it. So we keep a copy of the last real selection made
+     inside the editor, and use that copy when "Apply to selection" is tapped. */
+  let savedRange = null;
+
+  document.addEventListener('selectionchange', () => {
+    const sel = window.getSelection();
+    if (sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!range.collapsed && editor.contains(range.commonAncestorContainer)) {
+      savedRange = range.cloneRange();
+    }
+  });
+
   /* ---------------- Apply style to selected text ---------------- */
   function applyStyleToSelection(styles) {
-    const sel = window.getSelection();
-    if (!sel.rangeCount || sel.isCollapsed) {
+    if (!savedRange) {
       alert('Please select (highlight) some text in the box first.');
       return;
     }
-    const range = sel.getRangeAt(0);
+
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(savedRange);
+    const range = savedRange;
 
     if (!editor.contains(range.commonAncestorContainer)) {
       alert('Please select text inside the document area.');
@@ -422,6 +440,7 @@
     const newRange = document.createRange();
     newRange.selectNodeContents(span);
     sel.addRange(newRange);
+    savedRange = newRange.cloneRange();
   }
 
   applyBtn.addEventListener('click', () => {
@@ -441,6 +460,7 @@
     if (confirm('Clear all text in the document?')) {
       editor.innerHTML = '';
       editor.focus();
+      savedRange = null;
     }
   });
 
