@@ -70,6 +70,12 @@
     color: #888;
     width: 100%;
   }
+  #statusNote {
+    font-size: 12px;
+    color: #2f6fed;
+    width: 100%;
+    min-height: 14px;
+  }
   .divider {
     width: 1px;
     align-self: stretch;
@@ -92,38 +98,27 @@
   #swatchRow .swatch-label { font-size: 12px; color: #555; }
   .swatches {
     display: flex;
-    gap: 6px;
+    gap: 8px;
+  }
+  .swatch-unit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
   }
   .swatch {
-    position: relative;
     width: 28px;
     height: 28px;
     border-radius: 6px;
     border: 1px solid #ccc;
     cursor: pointer;
   }
-  .swatch .edit-dot {
-    position: absolute;
-    bottom: -6px;
-    right: -6px;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: #444;
-    color: #fff;
-    font-size: 9px;
-    line-height: 14px;
+  .swatch-hex {
+    width: 56px;
+    font-size: 10px;
+    padding: 2px 3px;
     text-align: center;
-    border: 1px solid #fff;
-  }
-  .swatch input[type="color"] {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    opacity: 0;
-    cursor: pointer;
-    padding: 0;
-    border: none;
+    text-transform: uppercase;
   }
 
   /* ---------- Font import ---------- */
@@ -132,7 +127,7 @@
     flex-direction: column;
     gap: 3px;
   }
-  #fontFileInput { display: none; }
+  #fontFileInput, #imageFileInput { display: none; }
   #importedFontsNote {
     font-size: 11px;
     color: #2f6fed;
@@ -143,14 +138,14 @@
   #page-wrap {
     display: flex;
     justify-content: center;
-    padding: 30px 12px 60px;
+    padding: 12px 4px 60px;
   }
   #editor {
     background: #fff;
     width: 100%;
-    max-width: 800px;
+    max-width: 900px;
     min-height: 1000px;
-    padding: 50px 55px;
+    padding: 14px;
     box-shadow: 0 1px 6px rgba(0,0,0,0.15);
     outline: none;
     font-size: 16px;
@@ -161,6 +156,8 @@
     content: attr(data-placeholder);
     color: #aaa;
   }
+  #editor table { border-collapse: collapse; }
+  #editor td { border: 1px solid #999; padding: 6px 10px; min-width: 40px; }
 
   /* ---------- Print / PDF ---------- */
   @media print {
@@ -215,18 +212,51 @@
       <input type="text" id="hexInput" placeholder="#000000" maxlength="7">
     </label>
     <div id="swatchRow">
-      <span class="swatch-label">Quick colors (tap ✎ to change)</span>
+      <span class="swatch-label">Quick colors — tap square to use, type hex below to change it</span>
       <div class="swatches" id="swatchesContainer"></div>
     </div>
   </div>
 
   <div class="divider"></div>
 
+  <label>Insert
+    <div style="display:flex; gap:6px;">
+      <button class="btn secondary" id="insertTableBtn" type="button">Table</button>
+      <button class="btn secondary" id="insertLineBtn" type="button">Line</button>
+    </div>
+  </label>
+
+  <label>Shape
+    <div style="display:flex; gap:6px;">
+      <select id="shapeSelect">
+        <option value="rectangle">Rectangle</option>
+        <option value="circle">Circle</option>
+        <option value="triangle">Triangle</option>
+      </select>
+      <button class="btn secondary" id="insertShapeBtn" type="button">Insert</button>
+    </div>
+  </label>
+
+  <label>Image
+    <button class="btn secondary" id="insertImageBtn" type="button">Import image</button>
+    <input type="file" id="imageFileInput" accept="image/*">
+  </label>
+
+  <div class="divider"></div>
+
+  <label>My defaults
+    <div style="display:flex; gap:6px;">
+      <button class="btn secondary" id="setDefaultBtn" type="button">Set as default</button>
+      <button class="btn secondary" id="resetDefaultBtn" type="button">Reset to default</button>
+    </div>
+  </label>
+
   <button class="btn secondary" id="applyBtn">Apply to selection</button>
   <button class="btn secondary" id="clearBtn">Clear all</button>
   <button class="btn" id="pdfBtn">Save as PDF</button>
 
-  <div id="hint">Type or paste text below. Select any text, then choose font / size / color and click "Apply to selection". Use "Import font" to load a font file you downloaded (e.g. from Google Fonts). Type a hex code directly, or tap a quick-color swatch (tap the small ✎ on a swatch to change what color it holds). "Save as PDF" opens your print dialog — choose "Save as PDF" as the destination.</div>
+  <div id="hint">Select text, then tap a font / size / color option — it applies instantly. With nothing selected, changing font/size/color sets the style new typing will use. Everything — text, imported fonts, colors, current style — is remembered automatically on this device. "Set as default" locks in your preferred font/size/color so the editor always opens with it. Insert tables, lines, shapes, or images at your cursor; pasting a copied image drops it straight in. "Save as PDF" opens your print dialog.</div>
+  <div id="statusNote"></div>
 </div>
 
 <div id="page-wrap">
@@ -246,9 +276,47 @@
   const fontFileInput = document.getElementById('fontFileInput');
   const importedFontsNote = document.getElementById('importedFontsNote');
   const swatchesContainer = document.getElementById('swatchesContainer');
+  const insertTableBtn = document.getElementById('insertTableBtn');
+  const insertLineBtn = document.getElementById('insertLineBtn');
+  const shapeSelect = document.getElementById('shapeSelect');
+  const insertShapeBtn = document.getElementById('insertShapeBtn');
+  const insertImageBtn = document.getElementById('insertImageBtn');
+  const imageFileInput = document.getElementById('imageFileInput');
+  const setDefaultBtn = document.getElementById('setDefaultBtn');
+  const resetDefaultBtn = document.getElementById('resetDefaultBtn');
+  const statusNote = document.getElementById('statusNote');
 
   const loadedGoogleFonts = new Set();
   const importedFontNames = new Set();
+
+  function showStatus(msg) {
+    statusNote.textContent = msg;
+    clearTimeout(showStatus._t);
+    showStatus._t = setTimeout(() => { statusNote.textContent = ''; }, 3000);
+  }
+
+  /* ---------------- Storage helpers ---------------- */
+  function safeSet(key, value) {
+    try { localStorage.setItem(key, value); return true; } catch (e) { return false; }
+  }
+  function safeGet(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
+  function arrayBufferToBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+  }
+  function base64ToArrayBuffer(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+  }
 
   /* ---------------- Google Fonts (dropdown list) ---------------- */
   function loadGoogleFont(param) {
@@ -260,10 +328,23 @@
     loadedGoogleFonts.add(param);
   }
 
-  fontSelect.addEventListener('change', () => {
-    const opt = fontSelect.options[fontSelect.selectedIndex];
-    loadGoogleFont(opt.getAttribute('data-google'));
-  });
+  /* ---------------- Persist / restore imported font FILES ---------------- */
+  function persistImportedFonts(name, base64) {
+    let fonts;
+    try { fonts = JSON.parse(safeGet('docEditorFonts')) || []; } catch (e) { fonts = []; }
+    fonts.push({ name: name, dataBase64: base64 });
+    const ok = safeSet('docEditorFonts', JSON.stringify(fonts));
+    if (!ok) showStatus('Font works for now, but was too large to save for next time.');
+  }
+
+  function registerImportedFont(name) {
+    importedFontNames.add(name);
+    const opt = document.createElement('option');
+    opt.value = "'" + name + "'";
+    opt.setAttribute('data-google', '');
+    opt.textContent = name + ' (imported)';
+    fontSelect.appendChild(opt);
+  }
 
   /* ---------------- Import a font FILE the user already downloaded ---------------- */
   importFontBtn.addEventListener('click', () => fontFileInput.click());
@@ -285,19 +366,15 @@
 
     const reader = new FileReader();
     reader.onload = function (e) {
-      const fontFace = new FontFace(finalName, e.target.result);
+      const buffer = e.target.result;
+      const fontFace = new FontFace(finalName, buffer);
       fontFace.load().then(function (loadedFace) {
         document.fonts.add(loadedFace);
-        importedFontNames.add(finalName);
-
-        const opt = document.createElement('option');
-        opt.value = "'" + finalName + "'";
-        opt.setAttribute('data-google', '');
-        opt.textContent = finalName + ' (imported)';
-        fontSelect.appendChild(opt);
+        registerImportedFont(finalName);
         fontSelect.value = "'" + finalName + "'";
-
         importedFontsNote.textContent = '"' + finalName + '" loaded and selected.';
+        persistImportedFonts(finalName, arrayBufferToBase64(buffer));
+        onStyleControlChanged();
       }).catch(function (err) {
         alert('Could not load that font file. Please check it is a valid .ttf, .otf, or .woff file.');
       });
@@ -325,12 +402,14 @@
 
   colorInput.addEventListener('input', () => {
     hexInput.value = colorInput.value.toUpperCase();
+    onStyleControlChanged();
   });
 
   hexInput.addEventListener('input', () => {
     const v = hexInput.value;
     if (isValidHex(v)) {
       colorInput.value = normalizeHex(v);
+      onStyleControlChanged();
     }
   });
   hexInput.addEventListener('blur', () => {
@@ -341,89 +420,81 @@
     }
   });
 
-  /* ---------------- 5 quick-color swatches (saved in this browser) ---------------- */
+  /* ---------------- 5 quick-color swatches, each with its own hex box ---------------- */
   const defaultSwatches = ['#000000', '#E63946', '#1D4ED8', '#16A34A', '#F59E0B'];
   let swatchColors;
   try {
-    const saved = JSON.parse(localStorage.getItem('docEditorSwatches'));
+    const saved = JSON.parse(safeGet('docEditorSwatches'));
     swatchColors = (Array.isArray(saved) && saved.length === 5) ? saved : defaultSwatches.slice();
   } catch (e) {
     swatchColors = defaultSwatches.slice();
   }
 
   function saveSwatches() {
-    try { localStorage.setItem('docEditorSwatches', JSON.stringify(swatchColors)); } catch (e) {}
+    safeSet('docEditorSwatches', JSON.stringify(swatchColors));
   }
 
   function renderSwatches() {
     swatchesContainer.innerHTML = '';
     swatchColors.forEach((color, i) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'swatch';
-      wrap.style.background = color;
-      wrap.title = 'Tap to use this color';
+      const unit = document.createElement('div');
+      unit.className = 'swatch-unit';
 
-      wrap.addEventListener('click', (e) => {
-        if (e.target.tagName === 'INPUT') return;
+      const box = document.createElement('div');
+      box.className = 'swatch';
+      box.style.background = color;
+      box.title = 'Tap to use this color';
+      box.addEventListener('click', () => {
         colorInput.value = color;
         hexInput.value = color.toUpperCase();
+        onStyleControlChanged();
       });
 
-      const dot = document.createElement('div');
-      dot.className = 'edit-dot';
-      dot.textContent = '✎';
-      dot.title = 'Change this swatch color';
-
-      const picker = document.createElement('input');
-      picker.type = 'color';
-      picker.value = color;
-      picker.addEventListener('input', (e) => {
-        e.stopPropagation();
+      const hexBox = document.createElement('input');
+      hexBox.type = 'text';
+      hexBox.className = 'swatch-hex';
+      hexBox.maxLength = 7;
+      hexBox.value = color.toUpperCase();
+      hexBox.addEventListener('input', () => {
+        if (isValidHex(hexBox.value)) {
+          swatchColors[i] = normalizeHex(hexBox.value);
+          box.style.background = swatchColors[i];
+          saveSwatches();
+        }
       });
-      picker.addEventListener('change', (e) => {
-        swatchColors[i] = e.target.value.toUpperCase();
-        saveSwatches();
-        renderSwatches();
+      hexBox.addEventListener('blur', () => {
+        hexBox.value = swatchColors[i];
       });
 
-      dot.appendChild(picker);
-      wrap.appendChild(dot);
-      swatchesContainer.appendChild(wrap);
+      unit.appendChild(box);
+      unit.appendChild(hexBox);
+      swatchesContainer.appendChild(unit);
     });
   }
   renderSwatches();
 
-  /* ---------------- Remember the selection even after tapping the toolbar ----------------
-     On phones, tapping a button outside the editable box clears the live text selection
-     before a click handler can read it. So we keep a copy of the last real selection made
-     inside the editor, and use that copy when "Apply to selection" is tapped. */
+  /* ---------------- Remember the text selection even after tapping the toolbar ---------------- */
   let savedRange = null;
 
   document.addEventListener('selectionchange', () => {
     const sel = window.getSelection();
     if (sel.rangeCount === 0) return;
     const range = sel.getRangeAt(0);
-    if (!range.collapsed && editor.contains(range.commonAncestorContainer)) {
+    if (editor.contains(range.commonAncestorContainer) && !range.collapsed) {
       savedRange = range.cloneRange();
     }
   });
 
   /* ---------------- Apply style to selected text ---------------- */
   function applyStyleToSelection(styles) {
-    if (!savedRange) {
-      alert('Please select (highlight) some text in the box first.');
-      return;
-    }
+    if (!savedRange) return;
 
     const sel = window.getSelection();
     sel.removeAllRanges();
     sel.addRange(savedRange);
     const range = savedRange;
 
-    if (!editor.contains(range.commonAncestorContainer)) {
-      alert('Please select text inside the document area.');
-      return;
-    }
+    if (!editor.contains(range.commonAncestorContainer)) return;
 
     const span = document.createElement('span');
     Object.entries(styles).forEach(([k, v]) => { span.style[k] = v; });
@@ -443,24 +514,89 @@
     savedRange = newRange.cloneRange();
   }
 
-  applyBtn.addEventListener('click', () => {
+  function currentStyles() {
     const opt = fontSelect.options[fontSelect.selectedIndex];
     loadGoogleFont(opt.getAttribute('data-google'));
-
     const colorToApply = isValidHex(hexInput.value) ? normalizeHex(hexInput.value) : colorInput.value;
-
-    applyStyleToSelection({
+    return {
       fontFamily: fontSelect.value,
       fontSize: sizeInput.value + 'px',
       color: colorToApply
-    });
+    };
+  }
+
+  /* If text is selected, style it immediately. If not, the picked font/size/color
+     becomes the style new typing will use (like a word processor). Either way,
+     the choice is remembered for next time this page is opened. */
+  function applyBaseEditorStyle() {
+    const s = currentStyles();
+    editor.style.fontFamily = s.fontFamily;
+    editor.style.fontSize = s.fontSize;
+    editor.style.color = s.color;
+  }
+
+  function saveLastStyle() {
+    const s = currentStyles();
+    safeSet('docEditorLastStyle', JSON.stringify(s));
+  }
+
+  function onStyleControlChanged() {
+    saveLastStyle();
+    if (savedRange) {
+      applyStyleToSelection(currentStyles());
+    } else {
+      applyBaseEditorStyle();
+    }
+  }
+
+  fontSelect.addEventListener('change', onStyleControlChanged);
+  sizeInput.addEventListener('input', onStyleControlChanged);
+
+  applyBtn.addEventListener('click', () => {
+    if (!savedRange) {
+      alert('Please select (highlight) some text in the box first.');
+      return;
+    }
+    applyStyleToSelection(currentStyles());
+    saveLastStyle();
   });
+
+  /* ---------------- Set / reset personal default style ---------------- */
+  setDefaultBtn.addEventListener('click', () => {
+    safeSet('docEditorDefaultStyle', JSON.stringify(currentStyles()));
+    showStatus('Saved as your default font, size, and color.');
+  });
+
+  resetDefaultBtn.addEventListener('click', () => {
+    let def;
+    try { def = JSON.parse(safeGet('docEditorDefaultStyle')); } catch (e) { def = null; }
+    if (!def) {
+      alert('You have not set a default yet. Pick a font, size, and color, then tap "Set as default".');
+      return;
+    }
+    applyStyleValuesToControls(def);
+    onStyleControlChanged();
+    showStatus('Reset to your default style.');
+  });
+
+  function applyStyleValuesToControls(style) {
+    if (style.font) {
+      const exists = Array.from(fontSelect.options).some(o => o.value === style.font);
+      if (exists) fontSelect.value = style.font;
+    }
+    if (style.fontSize) sizeInput.value = parseInt(style.fontSize) || sizeInput.value;
+    if (style.color) {
+      colorInput.value = style.color;
+      hexInput.value = style.color.toUpperCase();
+    }
+  }
 
   clearBtn.addEventListener('click', () => {
     if (confirm('Clear all text in the document?')) {
       editor.innerHTML = '';
       editor.focus();
       savedRange = null;
+      safeSet('docEditorContent', '');
     }
   });
 
@@ -468,12 +604,221 @@
     window.print();
   });
 
+  /* ---------------- Insert helper: tables, lines, shapes, imported images ---------------- */
+  function getInsertionRange() {
+    if (savedRange && editor.contains(savedRange.commonAncestorContainer)) {
+      return savedRange.cloneRange();
+    }
+    const sel = window.getSelection();
+    if (sel.rangeCount) {
+      const r = sel.getRangeAt(0);
+      if (editor.contains(r.commonAncestorContainer)) return r.cloneRange();
+    }
+    const r = document.createRange();
+    r.selectNodeContents(editor);
+    r.collapse(false);
+    return r;
+  }
+
+  function insertNodeInEditor(node) {
+    editor.focus();
+    const range = getInsertionRange();
+    range.deleteContents();
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    savedRange = null;
+    saveContentNow();
+  }
+
+  /* ---------------- Insert table ---------------- */
+  insertTableBtn.addEventListener('click', () => {
+    const rowsStr = prompt('How many rows?', '3');
+    if (rowsStr === null) return;
+    const colsStr = prompt('How many columns?', '3');
+    if (colsStr === null) return;
+    const rows = Math.max(1, Math.min(20, parseInt(rowsStr) || 1));
+    const cols = Math.max(1, Math.min(10, parseInt(colsStr) || 1));
+
+    const table = document.createElement('table');
+    table.style.margin = '10px 0';
+    table.style.width = '100%';
+    for (let r = 0; r < rows; r++) {
+      const tr = document.createElement('tr');
+      for (let c = 0; c < cols; c++) {
+        const td = document.createElement('td');
+        td.innerHTML = '&nbsp;';
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+    }
+    insertNodeInEditor(table);
+  });
+
+  /* ---------------- Insert line ---------------- */
+  insertLineBtn.addEventListener('click', () => {
+    const hr = document.createElement('hr');
+    hr.style.border = 'none';
+    hr.style.borderTop = '2px solid #333';
+    hr.style.margin = '14px 0';
+    insertNodeInEditor(hr);
+  });
+
+  /* ---------------- Insert shape (resizable via corner drag on desktop) ---------------- */
+  insertShapeBtn.addEventListener('click', () => {
+    const type = shapeSelect.value;
+    const wrapper = document.createElement('span');
+    wrapper.style.display = 'inline-block';
+    wrapper.style.width = '120px';
+    wrapper.style.height = '120px';
+    wrapper.style.resize = 'both';
+    wrapper.style.overflow = 'hidden';
+    wrapper.style.verticalAlign = 'middle';
+    wrapper.style.margin = '4px';
+    wrapper.contentEditable = 'false';
+
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+
+    let shapeEl;
+    if (type === 'circle') {
+      shapeEl = document.createElementNS(svgNS, 'circle');
+      shapeEl.setAttribute('cx', '50');
+      shapeEl.setAttribute('cy', '50');
+      shapeEl.setAttribute('r', '45');
+    } else if (type === 'triangle') {
+      shapeEl = document.createElementNS(svgNS, 'polygon');
+      shapeEl.setAttribute('points', '50,5 95,95 5,95');
+    } else {
+      shapeEl = document.createElementNS(svgNS, 'rect');
+      shapeEl.setAttribute('x', '5');
+      shapeEl.setAttribute('y', '5');
+      shapeEl.setAttribute('width', '90');
+      shapeEl.setAttribute('height', '90');
+    }
+    const strokeColor = isValidHex(hexInput.value) ? normalizeHex(hexInput.value) : colorInput.value;
+    shapeEl.setAttribute('fill', 'none');
+    shapeEl.setAttribute('stroke', strokeColor);
+    shapeEl.setAttribute('stroke-width', '4');
+
+    svg.appendChild(shapeEl);
+    wrapper.appendChild(svg);
+    insertNodeInEditor(wrapper);
+  });
+
+  /* ---------------- Insert / paste images ---------------- */
+  function insertImageFromDataUrl(dataUrl) {
+    const wrapper = document.createElement('span');
+    wrapper.style.display = 'inline-block';
+    wrapper.style.maxWidth = '100%';
+    wrapper.style.width = '250px';
+    wrapper.style.resize = 'both';
+    wrapper.style.overflow = 'hidden';
+    wrapper.style.verticalAlign = 'middle';
+    wrapper.style.margin = '4px';
+    wrapper.contentEditable = 'false';
+
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.display = 'block';
+    img.style.objectFit = 'contain';
+    wrapper.appendChild(img);
+
+    insertNodeInEditor(wrapper);
+  }
+
+  insertImageBtn.addEventListener('click', () => imageFileInput.click());
+
+  imageFileInput.addEventListener('change', () => {
+    const file = imageFileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => insertImageFromDataUrl(e.target.result);
+    reader.onerror = () => alert('Could not read that image. Please try again.');
+    reader.readAsDataURL(file);
+    imageFileInput.value = '';
+  });
+
+  /* Paste: image from clipboard goes in directly; otherwise plain text only */
   editor.addEventListener('paste', (e) => {
+    const clipboardData = e.clipboardData || window.clipboardData;
+    const items = clipboardData ? clipboardData.items : null;
+
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.indexOf('image') !== -1) {
+          e.preventDefault();
+          const file = items[i].getAsFile();
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (ev) => insertImageFromDataUrl(ev.target.result);
+          reader.readAsDataURL(file);
+          return;
+        }
+      }
+    }
+
     e.preventDefault();
-    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    const text = clipboardData.getData('text/plain');
     document.execCommand('insertText', false, text);
   });
 
+  /* ---------------- Autosave document content ---------------- */
+  let contentSaveTimer = null;
+  function saveContentNow() {
+    safeSet('docEditorContent', editor.innerHTML);
+  }
+  editor.addEventListener('input', () => {
+    clearTimeout(contentSaveTimer);
+    contentSaveTimer = setTimeout(saveContentNow, 400);
+  });
+
+  /* ---------------- Startup: restore fonts, style, and content ---------------- */
+  function restoreStyleAndContent() {
+    let style;
+    try { style = JSON.parse(safeGet('docEditorLastStyle')); } catch (e) { style = null; }
+    if (!style) {
+      try { style = JSON.parse(safeGet('docEditorDefaultStyle')); } catch (e) { style = null; }
+    }
+    if (style) applyStyleValuesToControls(style);
+    applyBaseEditorStyle();
+
+    const savedContent = safeGet('docEditorContent');
+    if (savedContent) {
+      editor.innerHTML = savedContent;
+    }
+  }
+
+  function loadPersistedFontsThenRestore() {
+    let fonts;
+    try { fonts = JSON.parse(safeGet('docEditorFonts')) || []; } catch (e) { fonts = []; }
+
+    const promises = fonts.map((f) => {
+      if (!f || !f.name || !f.dataBase64 || importedFontNames.has(f.name)) return Promise.resolve();
+      try {
+        const buffer = base64ToArrayBuffer(f.dataBase64);
+        const fontFace = new FontFace(f.name, buffer);
+        return fontFace.load().then((loadedFace) => {
+          document.fonts.add(loadedFace);
+          registerImportedFont(f.name);
+        }).catch(() => {});
+      } catch (e) {
+        return Promise.resolve();
+      }
+    });
+
+    Promise.all(promises).then(restoreStyleAndContent).catch(restoreStyleAndContent);
+  }
+
+  loadPersistedFontsThenRestore();
   editor.focus();
 </script>
 
