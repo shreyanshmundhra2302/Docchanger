@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simple Doc Editor</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #e9edf1;
+    color: #222;
+  }
+
+  /* ---------- Toolbar ---------- */
+  #toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #ffffff;
+    border-bottom: 1px solid #d5d9dd;
+    padding: 10px 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  #toolbar label {
+    font-size: 12px;
+    color: #555;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  #toolbar select, #toolbar input[type="number"] {
+    padding: 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 14px;
+    background: #fff;
+  }
+  #toolbar input[type="color"] {
+    width: 42px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .btn {
+    padding: 8px 14px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    background: #2f6fed;
+    color: white;
+    align-self: flex-end;
+  }
+  .btn:hover { background: #2559c7; }
+  .btn.secondary {
+    background: #eef1f5;
+    color: #333;
+    border: 1px solid #ccc;
+  }
+  .btn.secondary:hover { background: #dfe3e8; }
+  #hint {
+    font-size: 12px;
+    color: #888;
+    width: 100%;
+  }
+
+  /* ---------- Page / editor area ---------- */
+  #page-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 30px 12px 60px;
+  }
+  #editor {
+    background: #fff;
+    width: 100%;
+    max-width: 800px;
+    min-height: 1000px;
+    padding: 50px 55px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.15);
+    outline: none;
+    font-size: 16px;
+    line-height: 1.6;
+    font-family: Arial, sans-serif;
+  }
+  #editor:empty:before {
+    content: attr(data-placeholder);
+    color: #aaa;
+  }
+
+  /* ---------- Print / PDF ---------- */
+  @media print {
+    #toolbar, #page-wrap-title { display: none !important; }
+    body { background: #fff; }
+    #page-wrap { padding: 0; }
+    #editor {
+      box-shadow: none;
+      max-width: 100%;
+      min-height: auto;
+      padding: 0;
+    }
+    @page { margin: 20mm; }
+  }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <label>Font
+    <select id="fontSelect">
+      <option value="Arial, sans-serif" data-google="">Arial (default)</option>
+      <option value="'Roboto', sans-serif" data-google="Roboto">Roboto</option>
+      <option value="'Open Sans', sans-serif" data-google="Open+Sans">Open Sans</option>
+      <option value="'Lato', sans-serif" data-google="Lato">Lato</option>
+      <option value="'Montserrat', sans-serif" data-google="Montserrat">Montserrat</option>
+      <option value="'Poppins', sans-serif" data-google="Poppins">Poppins</option>
+      <option value="'Merriweather', serif" data-google="Merriweather">Merriweather</option>
+      <option value="'Playfair Display', serif" data-google="Playfair+Display">Playfair Display</option>
+      <option value="'Inter', sans-serif" data-google="Inter">Inter</option>
+      <option value="'Georgia', serif" data-google="">Georgia</option>
+      <option value="'Courier New', monospace" data-google="">Courier New</option>
+    </select>
+  </label>
+
+  <label>Size (px)
+    <input type="number" id="sizeInput" value="16" min="6" max="120" style="width:70px;">
+  </label>
+
+  <label>Color
+    <input type="color" id="colorInput" value="#000000">
+  </label>
+
+  <button class="btn secondary" id="applyBtn">Apply to selection</button>
+  <button class="btn secondary" id="clearBtn">Clear all</button>
+  <button class="btn" id="pdfBtn">Save as PDF</button>
+
+  <div id="hint">Type or paste text below. Select any text, then choose font / size / color and click "Apply to selection". "Save as PDF" opens your print dialog — choose "Save as PDF" as the destination.</div>
+</div>
+
+<div id="page-wrap">
+  <div id="editor" contenteditable="true" data-placeholder="Start typing or paste your text here..."></div>
+</div>
+
+<script>
+  const editor = document.getElementById('editor');
+  const fontSelect = document.getElementById('fontSelect');
+  const sizeInput = document.getElementById('sizeInput');
+  const colorInput = document.getElementById('colorInput');
+  const applyBtn = document.getElementById('applyBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const pdfBtn = document.getElementById('pdfBtn');
+
+  const loadedFonts = new Set();
+
+  function loadGoogleFont(param) {
+    if (!param || loadedFonts.has(param)) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=' + param + ':wght@400;700&display=swap';
+    document.head.appendChild(link);
+    loadedFonts.add(param);
+  }
+
+  // Preload default selected font just in case
+  fontSelect.addEventListener('change', () => {
+    const opt = fontSelect.options[fontSelect.selectedIndex];
+    loadGoogleFont(opt.getAttribute('data-google'));
+  });
+
+  function applyStyleToSelection(styles) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount || sel.isCollapsed) {
+      alert('Please select (highlight) some text in the box first.');
+      return;
+    }
+    const range = sel.getRangeAt(0);
+
+    // Make sure the selection is actually inside the editor
+    if (!editor.contains(range.commonAncestorContainer)) {
+      alert('Please select text inside the document area.');
+      return;
+    }
+
+    const span = document.createElement('span');
+    Object.entries(styles).forEach(([k, v]) => { span.style[k] = v; });
+
+    try {
+      range.surroundContents(span);
+    } catch (e) {
+      // Selection spans multiple elements — extract and re-wrap instead
+      const frag = range.extractContents();
+      span.appendChild(frag);
+      range.insertNode(span);
+    }
+
+    // Reselect the newly wrapped text so user can keep tweaking
+    sel.removeAllRanges();
+    const newRange = document.createRange();
+    newRange.selectNodeContents(span);
+    sel.addRange(newRange);
+  }
+
+  applyBtn.addEventListener('click', () => {
+    const opt = fontSelect.options[fontSelect.selectedIndex];
+    loadGoogleFont(opt.getAttribute('data-google'));
+
+    applyStyleToSelection({
+      fontFamily: fontSelect.value,
+      fontSize: sizeInput.value + 'px',
+      color: colorInput.value
+    });
+  });
+
+  clearBtn.addEventListener('click', () => {
+    if (confirm('Clear all text in the document?')) {
+      editor.innerHTML = '';
+      editor.focus();
+    }
+  });
+
+  pdfBtn.addEventListener('click', () => {
+    window.print();
+  });
+
+  // Keep pasted text but strip messy inline formatting from other apps,
+  // so it inherits the editor's default look until user restyles it.
+  editor.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text);
+  });
+
+  editor.focus();
+</script>
+
+</body>
+</html>
